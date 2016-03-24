@@ -2,6 +2,7 @@
 #include <avr/power.h>
 
 #define PIN 6
+#define IR_ANALOG 0
 const int numberPixels = 60;
 
 Adafruit_NeoPixel pixels = Adafruit_NeoPixel(numberPixels, 6, NEO_GRB + NEO_KHZ800);
@@ -14,6 +15,11 @@ int progress = 0;
 int R = 0;
 int G = 0;
 int B = 0;
+
+int runningInfraredTotal = 0;
+int infraredTicker = 0;
+int latestInfraredValue = 0;
+unsigned int lastInfraredSampleEpoch = 0;
 
 FlexCAN pixelBus = FlexCAN(1000000);
 const int pixelCanID = 0x608;
@@ -34,6 +40,7 @@ void setup() {
 }
 
 void loop() {
+  takeInfraredValues();
   if(pixelBus.available() > 0){
     CAN_message_t rxmsg;
 
@@ -70,6 +77,11 @@ void loop() {
       txmsg.id = irCanID;
       txmsg.len = 8;
 
+      data[0] = latestInfraredValue & 0xff;
+      data[1] = (latestInfraredValue >> 8) & 0xff;
+      data[2] = (latestInfraredValue >> 16) & 0xff;
+      data[3] = (latestInfraredValue >> 24) & 0xff;
+
       memcpy(txmsg.buf, data, 8);
       irCanID.write(txmsg);
       
@@ -88,5 +100,21 @@ void loop() {
 void solid(){
   for(int i = 0; i < numberPixels; i++){
     pixels.setPixelColor(i, pixels.Color(R, G, B));
+  }
+}
+
+
+void takeInfraredValues(){
+  unsigned int now = millis();
+  if (now - lastInfraredSampleEpoch > 10){ // every 10 ms
+    lastInfraredSampleEpoch = now;
+    runningInfraredTotal += analogRead(0);
+    ++infraredTicker;
+    if (infraredTicker%20 == 0){ // every 20 samples
+      latestInfraredValue = runningInfraredTotal / infraredTicker;
+      infraredTicker = 0;
+      runningInfraredTotal = 0;
+      Serial.println(latestInfraredValue);
+    }
   }
 }
